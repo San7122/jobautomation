@@ -1,0 +1,360 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UAE Job Copilot — Review</title>
+<style>
+  :root {
+    --bg: #0f1419; --card: #1a2029; --line: #2a3240; --text: #e6e8eb;
+    --dim: #9aa4b2; --accent: #4f9cf9; --green: #34c48c; --amber: #f2a93b;
+    --red: #e5534b;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text);
+         font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+  header { padding: 20px 24px 12px; border-bottom: 1px solid var(--line); }
+  h1 { margin: 0 0 4px; font-size: 20px; }
+  .stats { color: var(--dim); font-size: 13px; }
+  .stats b { color: var(--text); }
+  form.filters { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 12px; align-items: center; }
+  input, select { background: var(--card); color: var(--text); border: 1px solid var(--line);
+                  border-radius: 6px; padding: 7px 10px; font-size: 14px; }
+  input[type=number] { width: 90px; }
+  input[type=search] { min-width: 220px; }
+  button, .btn { background: var(--accent); color: #fff; border: 0; border-radius: 6px;
+                 padding: 7px 14px; font-size: 13px; cursor: pointer; text-decoration: none; }
+  button.secondary { background: transparent; border: 1px solid var(--line); color: var(--dim); }
+  button.green { background: var(--green); color: #08130d; }
+  main { padding: 16px 24px 60px; max-width: 1100px; margin: 0 auto; }
+  .msg { background: #173042; border: 1px solid var(--accent); color: var(--text);
+         padding: 10px 14px; border-radius: 8px; margin-bottom: 14px; }
+  .empty { color: var(--dim); padding: 40px 0; text-align: center; }
+  article.job { background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+                padding: 14px 16px; margin-bottom: 12px; display: flex; gap: 14px; }
+  .score { flex: 0 0 58px; height: 58px; border-radius: 10px; display: flex; flex-direction: column;
+           align-items: center; justify-content: center; font-weight: 700; font-size: 19px; }
+  .score small { font-size: 9px; font-weight: 500; color: rgba(255,255,255,.7); }
+  .s-hi { background: #14532d; color: #86efac; }
+  .s-md { background: #4a3208; color: #fcd34d; }
+  .s-lo { background: #2a3240; color: var(--dim); }
+  .body { flex: 1; min-width: 0; }
+  .body h3 { margin: 0; font-size: 16px; }
+  .body h3 a { color: var(--text); text-decoration: none; }
+  .body h3 a:hover { text-decoration: underline; }
+  .meta { color: var(--dim); font-size: 13px; margin: 2px 0 6px; }
+  .pill { display: inline-block; font-size: 11px; padding: 1px 8px; border-radius: 999px;
+          border: 1px solid var(--line); color: var(--dim); margin-left: 6px; }
+  .pill.must { border-color: var(--amber); color: var(--amber); }
+  .pill.ready { border-color: var(--accent); color: var(--accent); }
+  .pill.applied { border-color: var(--green); color: var(--green); }
+  ul.reasons { margin: 4px 0 6px; padding-left: 18px; font-size: 13px; color: #c9d1d9; }
+  ul.reasons li.gap { color: var(--amber); }
+  details { font-size: 13px; color: var(--dim); margin-top: 6px; }
+  details summary { cursor: pointer; color: var(--accent); }
+  details p, details pre { white-space: pre-wrap; margin: 8px 0 0; color: #c9d1d9;
+                           font-family: inherit; overflow-wrap: anywhere; }
+  .actions { margin-top: 10px; display: flex; gap: 8px; flex-wrap: wrap; }
+  .auto-bar { margin: 14px 24px 0; max-width: 1100px; margin-left: auto; margin-right: auto;
+              background: var(--card); border: 1px solid var(--line); border-radius: 10px;
+              padding: 12px 16px; }
+  .auto-bar .row { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+  .auto-bar button.green { font-size: 15px; padding: 10px 18px; }
+  .auto-status { color: var(--dim); font-size: 13px; }
+  .auto-bar pre { white-space: pre-wrap; font-size: 12px; color: #c9d1d9;
+                  max-height: 220px; overflow: auto; margin: 8px 0 0; }
+  .auto-bar details summary { cursor: pointer; color: var(--accent); font-size: 13px; }
+  .tabs { display: flex; gap: 10px; margin: 16px 0; }
+  .tab-btn { font-size: 14px; font-weight: 600; text-decoration: none; padding: 8px 18px; border-radius: 8px; color: var(--dim); background: var(--card); border: 1px solid var(--line); transition: all 0.2s; }
+  .tab-btn:hover { color: var(--text); border-color: var(--accent); }
+  .tab-btn.active { color: #fff; background: var(--accent); border-color: var(--accent); }
+  .applied-table { width: 100%; border-collapse: collapse; margin-top: 10px; background: var(--card); border-radius: 10px; overflow: hidden; border: 1px solid var(--line); }
+  .applied-table th, .applied-table td { padding: 12px 14px; border-bottom: 1px solid var(--line); text-align: left; font-size: 13px; vertical-align: middle; }
+  .applied-table th { background: #131820; color: var(--dim); font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+  .applied-table tr:hover { background: rgba(255,255,255,0.02); }
+  .session-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; margin: 14px 0 16px; }
+  .session-card { background: var(--card); border: 1px solid var(--line); border-radius: 8px; padding: 12px 14px; }
+  .session-card.highlight { border-color: var(--green); background: rgba(52, 196, 140, 0.08); }
+  .session-num { font-size: 24px; font-weight: 700; color: #fff; margin-top: 2px; }
+  .session-label { font-size: 11px; color: var(--dim); text-transform: uppercase; letter-spacing: 0.5px; font-weight: 600; }
+  .badge-today { background: #14532d; color: #86efac; border: 1px solid #166534; font-size: 10px; font-weight: 700; padding: 2px 7px; border-radius: 4px; display: inline-block; margin-right: 6px; }
+  .timeframe-bar { display: flex; align-items: center; justify-content: space-between; margin: 16px 0 10px; flex-wrap: wrap; gap: 10px; }
+  .timeframe-toggles { display: flex; gap: 8px; }
+  .t-btn { padding: 6px 14px; font-size: 12px; border-radius: 6px; text-decoration: none; border: 1px solid var(--line); background: var(--card); color: var(--dim); font-weight: 500; transition: all .2s; }
+  .t-btn:hover { color: var(--text); border-color: var(--accent); }
+  .t-btn.active { background: #1e293b; color: #fff; border-color: var(--accent); font-weight: 700; }
+  @media (max-width: 640px) { article.job { flex-direction: column; } .applied-table { display: block; overflow-x: auto; } }
+</style>
+</head>
+<body>
+<header>
+  <h1>UAE Job Copilot</h1>
+  <div class="stats">
+    <b>{{ stats.total_jobs }}</b> jobs · <b>{{ stats.must_apply }}</b> must-apply ·
+    <b>{{ stats.ready }}</b> ready · <b>{{ stats.applied }}</b> applied ·
+    <b>{{ stats.missing_description }}</b> missing descriptions
+  </div>
+  <form class="filters" method="get" action="/">
+    <input type="hidden" name="tab" value="{{ tab }}">
+    <input type="search" name="q" placeholder="Search title / company / text…" value="{{ filters.q }}">
+    <input type="number" name="min_score" min="0" max="100" placeholder="min score" value="{{ filters.min_score or '' }}">
+    <select name="source">
+      <option value="">all sources</option>
+      {% for s in sources %}
+      <option value="{{ s }}" {% if filters.source == s %}selected{% endif %}>{{ s }}</option>
+      {% endfor %}
+    </select>
+    <select name="status">
+      <option value="">any status</option>
+      <option value="none" {% if filters.status == 'none' %}selected{% endif %}>not prepped</option>
+      <option value="ready" {% if filters.status == 'ready' %}selected{% endif %}>ready</option>
+      <option value="applied" {% if filters.status == 'applied' %}selected{% endif %}>applied</option>
+    </select>
+    <button type="submit">Filter</button>
+    <a class="btn secondary" style="background:transparent;border:1px solid var(--line);color:var(--dim)" href="/?tab={{ tab }}">Reset</a>
+  </form>
+</header>
+<main>
+  <div class="auto-bar">
+    <div class="row">
+      {% if automation.running %}
+      <span class="pill applied">RUNNING</span>
+      <span class="auto-status">
+        Started {{ automation.started }} — automated search → JD ATS tailoring → auto-apply → digest.
+        Auto-refreshes when finished.
+      </span>
+      {% else %}
+      <form method="post" action="/automation/start" style="margin:0">
+        <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+        <button class="green" type="submit">
+          ▶ Start Automation — Search + ATS Tailor + Auto-Apply
+        </button>
+      </form>
+      <span class="auto-status">
+        Ek click poora cycle chalata hai: top matches filter honge, ATS resume tailor hoga, aur one-by-one auto-apply hoga.
+      </span>
+      {% endif %}
+    </div>
+    <div id="auto-status" class="auto-status"></div>
+    {% if automation.tail %}
+    <details>
+      <summary>Last run log (logs/{{ automation.log_file }})</summary>
+      <pre>{{ automation.tail }}</pre>
+    </details>
+    {% endif %}
+  </div>
+
+  <div class="tabs">
+    <a href="/?tab=jobs" class="tab-btn {% if tab != 'applied' %}active{% endif %}">📋 Job Feed ({{ jobs|length }})</a>
+    <a href="/?tab=applied" class="tab-btn {% if tab == 'applied' %}active{% endif %}">📊 Applied Jobs Report ({{ all_applied_count or applied_jobs|length }})</a>
+  </div>
+
+  {% if msg %}<div class="msg" style="margin-top:14px">{{ msg }}</div>{% endif %}
+
+  {% if tab == 'applied' %}
+    <div class="session-grid">
+      <div class="session-card highlight">
+        <div class="session-label">⚡ Applied Today</div>
+        <div class="session-num" style="color:var(--green)">{{ session_stats.today_total }}</div>
+      </div>
+      <div class="session-card">
+        <div class="session-label">LinkedIn (Today)</div>
+        <div class="session-num" style="color:#4f9cf9">{{ session_stats.today_linkedin }}</div>
+      </div>
+      <div class="session-card">
+        <div class="session-label">Naukri (Today)</div>
+        <div class="session-num" style="color:#f2a93b">{{ session_stats.today_naukri }}</div>
+      </div>
+      <div class="session-card">
+        <div class="session-label">Indeed (Today)</div>
+        <div class="session-num" style="color:#a78bfa">{{ session_stats.today_indeed }}</div>
+      </div>
+      <div class="session-card">
+        <div class="session-label">Cold Emails (Today)</div>
+        <div class="session-num" style="color:var(--dim)">{{ session_stats.coldmail_today }}</div>
+      </div>
+      <div class="session-card">
+        <div class="session-label">Total Applied All-Time</div>
+        <div class="session-num">{{ session_stats.all_time_total }}</div>
+      </div>
+    </div>
+
+    <div class="timeframe-bar">
+      <h2 style="margin:0;font-size:17px;">
+        {% if timeframe == 'today' %}
+          ⚡ Applications Submitted Today ({{ session_stats.today_total }})
+        {% else %}
+          📋 All Applied Applications ({{ session_stats.all_time_total }})
+        {% endif %}
+      </h2>
+      <div class="timeframe-toggles">
+        <a href="/?tab=applied&timeframe=today" class="t-btn {% if timeframe == 'today' %}active{% endif %}">
+          ⚡ Show Today Only ({{ session_stats.today_total }})
+        </a>
+        <a href="/?tab=applied&timeframe=all" class="t-btn {% if timeframe != 'today' %}active{% endif %}">
+          📁 Show All History ({{ session_stats.all_time_total }})
+        </a>
+      </div>
+    </div>
+
+    {% if not applied_jobs %}
+      <div class="empty">
+        {% if timeframe == 'today' %}
+          Aaj koi naya job apply nahi hua hai. "Show All History" dabayein ya "Start Automation" run karein.
+        {% else %}
+          Abhi koi job apply nahi hui hai. "Start Automation" dabayein ya Job Feed se apply karein.
+        {% endif %}
+      </div>
+    {% else %}
+      <table class="applied-table">
+        <thead>
+          <tr>
+            <th>Role & Company</th>
+            <th>Score</th>
+            <th>Applied At (IST)</th>
+            <th>Source / Platform</th>
+            <th>Notes & Confirmation</th>
+            <th>Tailored Resume</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in applied_jobs %}
+          <tr>
+            <td>
+              {% if a.is_today %}<span class="badge-today">⚡ TODAY</span>{% endif %}
+              <b><a href="{{ a.url }}" target="_blank" rel="noopener" style="color:var(--text);text-decoration:none;">{{ a.title }}</a></b><br>
+              <span style="color:var(--dim);font-size:12px;">{{ a.company }} · {{ a.location }}</span>
+            </td>
+            <td>
+              <span class="pill must" style="font-weight:700;">{{ a.score }}/100</span>
+            </td>
+            <td style="color:#e6e8eb;font-size:12px;font-weight:500;">
+              {{ a.applied_at_pretty }}
+            </td>
+            <td>
+              <span class="pill applied">{{ a.source or 'Auto' }}</span>
+            </td>
+            <td style="color:#c9d1d9;font-size:12px;max-width:280px;overflow-wrap:anywhere;">
+              {{ a.notes or 'Submitted successfully' }}
+            </td>
+            <td>
+              <a class="btn secondary" style="font-size:12px;padding:5px 10px;text-decoration:none;" href="/resume/{{ a.job_id }}" target="_blank">
+                📄 View PDF
+              </a>
+            </td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    {% endif %}
+  {% else %}
+
+  {% if not jobs %}
+    <div class="empty">No jobs match. Run <code>python3 main.py search</code> first.</div>
+  {% endif %}
+
+  {% for j in jobs %}
+  <article class="job">
+    <div class="score {% if j.score >= 80 %}s-hi{% elif j.score >= 60 %}s-md{% else %}s-lo{% endif %}">
+      {{ j.score }}<small>/100</small>
+    </div>
+    <div class="body">
+      <h3><a href="{{ j.url }}" target="_blank" rel="noopener">{{ j.title }}</a></h3>
+      <div class="meta">
+        {{ j.company }} · {{ j.location }} · via {{ j.source }}
+        {% if j.must_apply %}<span class="pill must">must apply</span>{% endif %}
+        {% if j.app_status == 'ready' %}<span class="pill ready">ready</span>{% endif %}
+        {% if j.app_status == 'applied' %}<span class="pill applied">applied</span>{% endif %}
+      </div>
+
+      {% if j.reasons %}
+      <ul class="reasons">
+        {% for r in j.reasons[:3] %}<li>{{ r }}</li>{% endfor %}
+        {% for g in j.gaps[:2] %}<li class="gap">gap: {{ g }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+
+      {% if j.desc_lines %}
+      <details>
+        <summary>Job description ({{ j.description|length }} chars)</summary>
+        <p>{{ j.description }}</p>
+      </details>
+      {% endif %}
+
+      {% if j.cover_letter %}
+      <details>
+        <summary>Cover letter</summary>
+        <p>{{ j.cover_letter }}</p>
+        <button type="button" class="secondary"
+                onclick="navigator.clipboard.writeText(this.previousElementSibling.textContent).then(()=>{this.textContent='Copied!';setTimeout(()=>this.textContent='Copy',1500)})">Copy</button>
+      </details>
+      {% endif %}
+      {% if j.resume_bullets %}
+      <details>
+        <summary>Resume bullets</summary>
+        <p>{{ j.resume_bullets }}</p>
+      </details>
+      {% endif %}
+
+      <div class="actions">
+        {% if j.app_status != 'applied' %}
+        <form method="post" action="/job/{{ j.job_id }}/prep">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button class="secondary" type="submit" title="Generate/refresh cover letter + bullets (uses AI, may take ~30s)">
+            {% if j.app_status == 'ready' %}Re-prep{% else %}Prep{% endif %}
+          </button>
+        </form>
+        <form method="post" action="/job/{{ j.job_id }}/apply-browser">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button type="submit" title="Opens your browser, autofills name/email/cover letter/resume — you review and submit">Apply: fill in browser</button>
+        </form>
+        {% if j.hr_email %}
+        <form method="post" action="/job/{{ j.job_id }}/apply-email">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button class="green" type="submit" title="Email the cover letter + resume to {{ j.hr_email }} (marks applied on success)">
+            Email → {{ j.hr_email }}
+          </button>
+        </form>
+        {% endif %}
+        {% endif %}
+        {% if j.app_status == 'ready' %}
+        <form method="post" action="/job/{{ j.job_id }}/applied">
+          <input type="hidden" name="_csrf_token" value="{{ csrf_token }}">
+          <button class="green" type="submit">Mark applied</button>
+        </form>
+        {% endif %}
+        {% if j.app_status in ['ready', 'applied'] %}
+        <a class="btn secondary" style="background:#173042;border:1px solid var(--accent);color:var(--text);text-decoration:none;"
+           href="/resume/{{ j.job_id }}" target="_blank" rel="noopener">📄 View ATS Resume</a>
+        {% endif %}
+        <a class="btn secondary" style="background:transparent;border:1px solid var(--line);color:var(--dim)"
+           href="{{ j.url }}" target="_blank" rel="noopener">Open listing</a>
+      </div>
+    </div>
+  </article>
+  {% endfor %}
+  {% endif %}
+</main>
+<script>
+(async function poll() {
+  const el = document.getElementById("auto-status");
+  if (!el) return;
+  try {
+    const s = await (await fetch("/automation/status")).json();
+    if (s.running) {
+      el.textContent = "Automation running… (started " + s.started + ")";
+    } else if (s.returncode !== null) {
+      if (el.dataset.done !== String(s.returncode)) {
+        el.dataset.done = String(s.returncode);
+        el.textContent = s.returncode === 0
+          ? "Automation finished — stats refresh ho rahe hain…"
+          : "Automation exited with code " + s.returncode + " — log dekho.";
+        setTimeout(() => location.reload(), 3000);
+      }
+    }
+  } catch (e) { /* server restarting — ignore */ }
+  setTimeout(poll, 5000);
+})();
+</script>
+</body>
+</html>

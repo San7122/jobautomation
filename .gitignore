@@ -1,0 +1,39 @@
+# secrets
+.env
+
+# personal profile (real name/phone/email) — use profile.example.py instead
+config/profile.py
+
+# python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+
+# generated state
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+data/pw_jobs.json
+
+# auth sessions (Playwright storage_state) — NEVER commit
+data/*_state.json
+
+# PII: generated resumes + personal digests
+data/resumes/
+data/digests/
+
+# logs
+logs/*.log
+logs/*.err
+logs/*.png
+logs/*.csv
+logs/*.txt
+logs/autoapply_reports/
+
+# personal observation log
+skill-observations/
+
+# macos
+.DS_Store
