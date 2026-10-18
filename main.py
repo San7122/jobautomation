@@ -50,6 +50,7 @@ from scraper.jobs import enrich_descriptions, search_all, deduplicate_jobs  # no
 from tracker.db import (  # noqa: E402
     _db,
     get_applied_recent,
+    get_job,
     get_pending_ready,
     get_stats,
     get_top_jobs,
@@ -75,15 +76,23 @@ logging.basicConfig(
 log = logging.getLogger("main")
 
 
-def _merge_pw_jobs(jobs: list, run: bool, queries: list[str], location: str) -> list:
-    """Merge Playwright results: fresh run with --playwright, else cached file."""
+def _merge_pw_jobs(
+    jobs: list, run: bool, queries: list[str], location: str, sources: list[str] | None = None,
+) -> list:
+    """Merge Playwright results: fresh run with --playwright, else cached file.
+
+    sources: filter to the requested platforms (Playwright scrapers and the
+    cache are both per-source — `--sources bayt` must not spin up Indeed).
+    """
     try:
         from scraper.pw_jobs import load_pw_jobs, run_all
     except Exception as e:
         log.warning("Playwright module unavailable: %s", e)
         return jobs
     try:
-        jobs = jobs + (run_all(queries, location) if run else load_pw_jobs())
+        jobs = jobs + (
+            run_all(queries, location, sources=sources) if run else load_pw_jobs(sources=sources)
+        )
     except Exception as e:
         log.error("Playwright pass failed: %s", e)
     return jobs
@@ -103,7 +112,7 @@ def cmd_search(
     log.info("Searching %d queries | %s | sources: %s", len(queries), location, ",".join(sources))
 
     jobs = search_all(queries, location, sources=sources)
-    jobs = _merge_pw_jobs(jobs, run=playwright, queries=queries, location=location)
+    jobs = _merge_pw_jobs(jobs, run=playwright, queries=queries, location=location, sources=sources)
 
     # Cross-source dedup: same job on LinkedIn + Indeed + Bayt should count once.
     jobs = deduplicate_jobs(jobs)
@@ -118,15 +127,25 @@ def cmd_search(
         log.info("Fetched %d job descriptions", fetched)
 
     new = must = 0
+    scored = skipped = 0
     for job in jobs:
         is_new = not job_exists(job.job_id)
+        # Skip re-scoring if job already has a score (unless it just got a description)
+        existing = get_job(job.job_id) if not is_new else None
+        already_scored = existing and existing.get("score", 0) > 0 and existing.get("description")
+        if already_scored and job.description and job.description == existing.get("description"):
+            skipped += 1
+            upsert_job(job)  # update metadata only, keep existing score
+            continue
         info = score_job(job.title, job.company, job.description or job.title)
         upsert_job(job, info)
+        scored += 1
         if is_new:
             new += 1
         if info.get("must_apply"):
             must += 1
-    log.info("Indexed %d jobs (%d new), %d must-apply", len(jobs), new, must)
+    log.info("Indexed %d jobs (%d new, %d scored, %d skipped-already-scored), %d must-apply",
+             len(jobs), new, scored, skipped, must)
     return jobs
 
 
@@ -137,7 +156,10 @@ def cmd_prep(min_score: int | None = None, limit: int | None = None, force: bool
     top = get_top_jobs(min_score=min_score, limit=limit, exclude_prepped=not force)
     log.info("Preparing %d applications (score >= %d, force=%s)", len(top), min_score, force)
     for j in top:
-        reasons = json.loads(j.get("match_reasons") or "[]")
+        try:
+            reasons = json.loads(j.get("match_reasons") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            reasons = []
         desc = j.get("description") or ""
         letter = tailor_cover_letter(j["title"], j["company"], desc, reasons)
         bullets = tailor_resume_bullets(j["title"], desc)
@@ -563,6 +585,42 @@ def cmd_naukri_login():
         sys.exit(1)
 
 
+def cmd_naukrigulf_login():
+    """One-time NaukriGulf login — uses your Chrome profile if possible, else browser login."""
+    init_db()
+    from apply.naukrigulf import has_session, login_interactive
+
+    print("Chrome khol rahi hoon aapke default profile ke saath — agar pehle se NaukriGulf")
+    print("login hai to kuch karna nahi padega, session apne aap save ho jayega.")
+    print("Nahi hai to wahi window me log in kar lo (ya .env me NAUKRIGULF_EMAIL /")
+    print("NAUKRIGULF_PASSWORD set karo with ALLOW_STORED_CREDENTIALS=1). Max ~7 min wait.")
+    if login_interactive():
+        print("Session saved — auto-apply NaukriGulf Easy Apply use kar sakega.")
+    elif has_session():
+        print("Purana session file me hai — woh use hoga.")
+    else:
+        print("Login detect nahi hua — dobara try: python3 main.py naukrigulf-login")
+        sys.exit(1)
+
+
+def cmd_bayt_login():
+    """One-time Bayt login — uses your Chrome profile if possible, else browser login."""
+    init_db()
+    from apply.bayt import has_session, login_interactive
+
+    print("Chrome khol rahi hoon aapke default profile ke saath — agar pehle se Bayt")
+    print("login hai to kuch karna nahi padega, session apne aap save ho jayega.")
+    print("Nahi hai to wahi window me log in kar lo (ya .env me BAYT_EMAIL /")
+    print("BAYT_PASSWORD set karo with ALLOW_STORED_CREDENTIALS=1). Max ~7 min wait.")
+    if login_interactive():
+        print("Session saved — auto-apply Bayt Easy Apply use kar sakega.")
+    elif has_session():
+        print("Purana session file me hai — woh use hoga.")
+    else:
+        print("Login detect nahi hua — dobara try: python3 main.py bayt-login")
+        sys.exit(1)
+
+
 def cmd_naukri_batch(
     limit: int = 30,
     min_score: int = 40,
@@ -637,7 +695,7 @@ def cmd_naukri_batch(
                 with _db() as conn:
                     conn.execute(
                         "UPDATE jobs SET score = ?, match_reasons = ?, gaps = ?, must_apply = ? WHERE job_id = ?",
-                        (score, str(result.get("reasons", [])), str(result.get("gaps", [])),
+                        (score, json.dumps(result.get("match_reasons", [])), json.dumps(result.get("gaps", [])),
                          result.get("must_apply", False), j.job_id),
                     )
                 j.score = score
@@ -657,12 +715,14 @@ def cmd_naukri_batch(
 
     log.info("Prepping %d applications (score >= %d)...", len(top_jobs), min_score)
     for j in top_jobs:
+        # Read match_reasons from DB (already scored in step 4) — don't re-score
         reasons = []
         try:
-            result = score_job(j.title, j.company, j.description)
-            reasons = result.get("reasons", [])
-        except Exception:
-            pass
+            got = get_job(j.job_id)
+            if got:
+                reasons = json.loads(got.get("match_reasons") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            reasons = []
         from ai.assistant import tailor_cover_letter, tailor_resume_bullets
         letter = tailor_cover_letter(j.title, j.company, j.description or "", reasons)
         bullets = tailor_resume_bullets(j.title, j.description or "")
@@ -786,25 +846,6 @@ def cmd_coldmail_send(
     if results.get("reason"):
         print(f"   Reason: {results['reason']}")
     return results
-
-
-def cmd_linkedin_collect(queries: list[str] | None = None, limit: int = 20):
-    """Collect recruiter emails from LinkedIn urgent hiring posts."""
-    from scraper.linkedin_posts import collect_from_linkedin_posts
-
-    print("🔍 Searching LinkedIn for urgent hiring posts...")
-    print("   (Make sure you're logged in: python3 main.py linkedin-login)\n")
-
-    count = collect_from_linkedin_posts(queries=queries, limit_per_query=limit)
-    print(f"\n✅ Collected {count} new recruiter emails from LinkedIn posts!")
-
-    # Show stats
-    from tracker.db import get_contact_stats
-    stats = get_contact_stats()
-    print(f"\n📊 Contact Stats:")
-    print(f"   Total: {stats['total_contacts']} | New: {stats['new']} | "
-          f"Contacted: {stats['contacted']} | Replied: {stats['replied']}")
-    return count
 
 
 def cmd_run(args):
@@ -1371,6 +1412,8 @@ def build_parser() -> argparse.ArgumentParser:
     sub.add_parser("linkedin-login", help="one-time LinkedIn login (opens browser; saves session for Easy Apply)")
     sub.add_parser("indeed-login", help="one-time Indeed login (opens browser; saves session for Easy Apply)")
     sub.add_parser("naukri-login", help="one-time Naukri login (opens browser; saves session for Easy Apply)")
+    sub.add_parser("naukrigulf-login", help="one-time NaukriGulf login (opens browser; saves session for Easy Apply)")
+    sub.add_parser("bayt-login", help="one-time Bayt login (opens browser; saves session for Easy Apply)")
 
     # Naukri batch mode
     nb = sub.add_parser("naukri-batch", help="search + apply to 30+ Naukri jobs in one run")
@@ -1516,6 +1559,10 @@ def main(argv: list[str] | None = None):
         cmd_indeed_login()
     elif args.cmd == "naukri-login":
         cmd_naukri_login()
+    elif args.cmd == "naukrigulf-login":
+        cmd_naukrigulf_login()
+    elif args.cmd == "bayt-login":
+        cmd_bayt_login()
     elif args.cmd == "naukri-batch":
         cmd_naukri_batch(
             limit=args.limit,

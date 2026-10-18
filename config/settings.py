@@ -46,7 +46,7 @@ def get_location(override: str | None = None) -> str:
 
 
 def get_sources(override: str | None = None) -> list[str]:
-    raw = override or os.environ.get("SOURCES", "linkedin,indeed,naukri,bayt,gulftalent")
+    raw = override or os.environ.get("SOURCES", "linkedin,indeed,naukri,naukrigulf,bayt,gulftalent")
     return [s.strip().lower() for s in raw.split(",") if s.strip()]
 
 

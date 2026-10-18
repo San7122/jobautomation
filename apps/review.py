@@ -58,7 +58,7 @@ def _format_applied_row(r: dict) -> dict:
     r["is_today"] = is_today
     return r
 
-SOURCES = ["linkedin", "indeed", "naukri", "bayt", "gulftalent"]
+SOURCES = ["linkedin", "indeed", "naukri", "naukrigulf", "bayt", "gulftalent"]
 
 # One automation run at a time (search -> score -> prep -> auto-apply -> digest).
 _AUTOMATION: dict = {"proc": None, "log_file": None, "started": None}

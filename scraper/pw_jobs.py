@@ -21,14 +21,14 @@ log = logging.getLogger("pw")
 OUT = ROOT / "data" / "pw_jobs.json"
 
 
-def _launch_browser(pw_instance):
+def _launch_browser(pw_instance, headless: bool = True):
     return pw_instance.chromium.launch(
-        headless=True,
+        headless=headless,
         args=["--disable-blink-features=AutomationControlled", "--no-sandbox"],
     )
 
 
-def _new_page(browser, use_indeed_session: bool = False, use_naukri_session: bool = False):
+def _new_page(browser, use_indeed_session: bool = False, use_naukri_session: bool = False, use_naukrigulf_session: bool = False, use_bayt_session: bool = False):
     ctx_kwargs = {
         "viewport": {"width": 1440, "height": 900},
         "locale": "en-US",
@@ -50,6 +50,20 @@ def _new_page(browser, use_indeed_session: bool = False, use_naukri_session: boo
             if naukri_has_session():
                 ctx_kwargs["storage_state"] = str(NAUKRI_STATE)
                 ctx_kwargs["locale"] = "en-IN"
+        except Exception:
+            pass
+    elif use_naukrigulf_session:
+        try:
+            from apply.naukrigulf import STATE_FILE as NAUKRIGULF_STATE, has_session as naukrigulf_has_session
+            if naukrigulf_has_session():
+                ctx_kwargs["storage_state"] = str(NAUKRIGULF_STATE)
+        except Exception:
+            pass
+    elif use_bayt_session:
+        try:
+            from apply.bayt import STATE_FILE as BAYT_STATE, has_session as bayt_has_session
+            if bayt_has_session():
+                ctx_kwargs["storage_state"] = str(BAYT_STATE)
         except Exception:
             pass
     ctx = browser.new_context(**ctx_kwargs)
@@ -150,24 +164,31 @@ def scrape_indeed(pw_instance, query: str, location: str = "United Arab Emirates
 def scrape_bayt(pw_instance, query: str, location: str = "United Arab Emirates", limit: int = 20) -> list[Job]:
     jobs: list[Job] = []
     url = f"https://www.bayt.com/en/uae/jobs/?q={query.replace(' ', '+')}"
-    browser = _launch_browser(pw_instance)
-    page = _new_page(browser)
+    # Bayt sits behind Cloudflare: headless Chromium gets the "Just a moment"
+    # challenge even with a valid cf_clearance — run headed with the session.
+    browser = _launch_browser(pw_instance, headless=False)
+    page = _new_page(browser, use_bayt_session=True)
     try:
         page.goto(url, timeout=45000, wait_until="domcontentloaded")
-        page.wait_for_timeout(3000)
-        cards = page.query_selector_all("li.w-100, div.job-card")[:limit]
+        deadline = time.time() + 20
+        while time.time() < deadline:
+            if "Just a moment" not in page.title():
+                break
+            page.wait_for_timeout(1500)
+        page.wait_for_selector("li[data-js-job]", timeout=20000)
+        cards = page.query_selector_all("li[data-js-job]")[:limit]
         for c in cards:
-            t = c.query_selector("h2 a, h3 a, a[href*='/jobs/']")
-            comp = c.query_selector("span.clickable, div.clickable")
-            loc = c.query_selector("span.t-small")
+            t = c.query_selector("h2 a[href*='/jobs/']")
             if not t:
                 continue
+            comp = c.query_selector(".job-company-location-wrapper a")
+            loc = c.query_selector(".jb-tags a.t-default")
             href = t.get_attribute("href") or ""
             if href.startswith("/"):
                 href = f"https://www.bayt.com{href}"
             jobs.append(Job(
                 source="bayt",
-                title=(t.inner_text() or "").strip(),
+                title=(t.get_attribute("title") or t.inner_text() or "").strip(),
                 company=(comp.inner_text() if comp else "Unknown").strip(),
                 location=(loc.inner_text() if loc else location).strip(),
                 url=href,
@@ -229,6 +250,61 @@ def scrape_naukri(pw_instance, query: str, location: str = "India", limit: int =
     return jobs
 
 
+def scrape_naukrigulf(pw_instance, query: str, location: str = "United Arab Emirates", limit: int = 20) -> list[Job]:
+    """NaukriGulf.com Playwright scraper."""
+    jobs: list[Job] = []
+    query_slug = query.lower().replace(" ", "-")
+    loc_slug = location.lower().replace(" ", "-") if location else "united-arab-emirates"
+    url = f"https://www.naukrigulf.com/{query_slug}-jobs-in-{loc_slug}"
+    browser = _launch_browser(pw_instance)
+    page = _new_page(browser, use_naukrigulf_session=True)
+    try:
+        # Visit homepage first (bot protection)
+        page.goto("https://www.naukrigulf.com/", timeout=45000, wait_until="domcontentloaded")
+        page.wait_for_timeout(2000)
+
+        page.goto(url, timeout=45000, wait_until="domcontentloaded")
+        page.wait_for_timeout(4000)
+
+        # Try common job-card selectors
+        cards = page.query_selector_all(
+            "div.job-card, div[class*='jobCard' i], div[class*='job-card' i], "
+            "article, li[class*='job' i], div[data-job-id], div[class*='result' i]"
+        )[:limit]
+
+        for c in cards:
+            t = c.query_selector(
+                "a[class*='title' i], h2 a, h3 a, a[class*='job' i], a[title]"
+            )
+            comp = c.query_selector(
+                "span[class*='company' i], div[class*='company' i], a[class*='company' i]"
+            )
+            loc = c.query_selector(
+                "span[class*='loc' i], div[class*='loc' i], span[class*='city' i]"
+            )
+            if not t:
+                continue
+            href = t.get_attribute("href") or ""
+            if href.startswith("/"):
+                href = f"https://www.naukrigulf.com{href}"
+            if not href.startswith("http"):
+                continue
+            jobs.append(Job(
+                source="naukrigulf",
+                title=(t.inner_text() or t.get_attribute("title") or "").strip(),
+                company=(comp.inner_text() if comp else "Unknown").strip(),
+                location=(loc.inner_text() if loc else location).strip(),
+                url=href.split("?")[0],
+            ))
+    except Exception as e:
+        log.warning("NaukriGulf scrape failed: %s", e)
+    finally:
+        page.close()
+        browser.close()
+    log.info("NaukriGulf(playwright): %d jobs", len(jobs))
+    return jobs
+
+
 def scrape_gulftalent(pw_instance, query: str, location: str = "United Arab Emirates", limit: int = 20) -> list[Job]:
     jobs: list[Job] = []
     url = f"https://www.gulftalent.com/jobs/search?keywords={query.replace(' ', '+')}"
@@ -263,19 +339,37 @@ def scrape_gulftalent(pw_instance, query: str, location: str = "United Arab Emir
     return jobs
 
 
-def run_all(queries: list[str], location: str = "United Arab Emirates") -> list[Job]:
+PW_SCRAPERS = {
+    "indeed": scrape_indeed,
+    "bayt": scrape_bayt,
+    "gulftalent": scrape_gulftalent,
+    "naukri": scrape_naukri,
+    "naukrigulf": scrape_naukrigulf,
+}
+
+
+def run_all(
+    queries: list[str],
+    location: str = "United Arab Emirates",
+    sources: list[str] | None = None,
+) -> list[Job]:
     from playwright.sync_api import sync_playwright
+    wanted = [s.lower() for s in (sources or list(PW_SCRAPERS))]
+    fns = [fn for name, fn in PW_SCRAPERS.items() if name in wanted]
+    if not fns:
+        log.warning("No Playwright scrapers match sources: %s", ",".join(wanted))
+        return []
     seen: dict[str, Job] = {}
     with sync_playwright() as pw:
         for q in queries:
-            for fn in (scrape_indeed, scrape_bayt, scrape_gulftalent, scrape_naukri):
+            for fn in fns:
                 try:
                     for j in fn(pw, q, location):
                         if j.job_id not in seen:
                             seen[j.job_id] = j
                 except Exception as e:
                     log.error("%s failed '%s': %s", fn.__name__, q, e)
-                time.sleep(random.uniform(2, 5))
+                time.sleep(random.uniform(1, 2))
     result = list(seen.values())
     OUT.parent.mkdir(parents=True, exist_ok=True)
     OUT.write_text(json.dumps([{
@@ -449,6 +543,62 @@ def fetch_naukri_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> di
     return out
 
 
+def fetch_naukrigulf_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> dict[str, str]:
+    """NaukriGulf-specific description fetcher."""
+    from scraper.jobs import MAX_DESC_CHARS, _clean_text
+
+    out: dict[str, str] = {}
+    if not urls:
+        return out
+    from playwright.sync_api import sync_playwright
+
+    with sync_playwright() as pw:
+        browser = _launch_browser(pw)
+        page = _new_page(browser, use_naukrigulf_session=True)
+        try:
+            # Homepage first (bot protection)
+            page.goto("https://www.naukrigulf.com/", timeout=45000, wait_until="domcontentloaded")
+            page.wait_for_timeout(2000)
+
+            for url in urls:
+                if url in out:
+                    continue
+                try:
+                    page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                    page.wait_for_timeout(3000)
+
+                    desc = page.evaluate('''() => {
+                        const selectors = [
+                            'div[class*="jobDescription" i]', '#jobDescription',
+                            'div.job-description', 'div[class*="description" i]',
+                            'section[class*="description" i]', 'div[class*="JD" i]'
+                        ];
+                        for (const sel of selectors) {
+                            const el = document.querySelector(sel);
+                            if (el) {
+                                const text = el.innerText || '';
+                                if (text.length > 100) return text;
+                            }
+                        }
+                        return null;
+                    }''')
+
+                    if desc and len(desc) >= 80:
+                        out[url] = _clean_text(desc)[:MAX_DESC_CHARS]
+                        log.info("NaukriGulf description ok: %s (%d chars)", url[:60], len(desc))
+                except Exception as e:
+                    log.warning("NaukriGulf desc failed %s: %s", url[:60], e)
+        except Exception as e:
+            log.warning("NaukriGulf desc fetch failed: %s", e)
+        finally:
+            try:
+                page.close()
+                browser.close()
+            except Exception:
+                pass
+    return out
+
+
 def fetch_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> dict[str, str]:
     """Browser-based fallback for description pages that block plain requests.
 
@@ -463,9 +613,14 @@ def fetch_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> dict[str,
         return out
     from playwright.sync_api import sync_playwright
 
+    # Bayt sits behind Cloudflare: description pages need the headed browser
+    # + saved session (headless gets the "Just a moment" challenge).
+    has_bayt = any("bayt.com" in u for u in urls)
+
     with sync_playwright() as pw:
-        browser = _launch_browser(pw)
+        browser = _launch_browser(pw, headless=not has_bayt)
         page = _new_page(browser)
+        bayt_page = None
         for url in urls:
             if url in out:
                 continue
@@ -476,10 +631,17 @@ def fetch_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> dict[str,
                     page = _new_page(browser, use_indeed_session=True)
                 except Exception:
                     pass
+            # Bayt needs the session + a dedicated (headed) page
+            if "bayt.com" in url and bayt_page is None:
+                try:
+                    bayt_page = _new_page(browser, use_bayt_session=True)
+                except Exception:
+                    pass
+            nav_page = bayt_page if ("bayt.com" in url and bayt_page is not None) else page
             try:
-                page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
-                page.wait_for_timeout(1200)
-                soup = BeautifulSoup(page.content(), "html.parser")
+                nav_page.goto(url, timeout=timeout_ms, wait_until="domcontentloaded")
+                nav_page.wait_for_timeout(1200)
+                soup = BeautifulSoup(nav_page.content(), "html.parser")
                 for sel in DESC_SELECTORS:
                     el = soup.select_one(sel)
                     if el:
@@ -503,15 +665,20 @@ def fetch_descriptions_pw(urls: list[str], timeout_ms: int = 40000) -> dict[str,
                             out[url] = _clean_text(meta["content"])[:MAX_DESC_CHARS]
             except Exception as e:
                 log.warning("PW description failed %s: %s", url[:70], e)
+        for p in (page, bayt_page):
+            if p is not None:
+                try:
+                    p.close()
+                except Exception:
+                    pass
         try:
-            page.close()
             browser.close()
         except Exception:
             pass
     return out
 
 
-def load_pw_jobs(max_age_hours: int = 24) -> list[Job]:
+def load_pw_jobs(max_age_hours: int = 24, sources: list[str] | None = None) -> list[Job]:
     """Load cached data/pw_jobs.json results for merging (None-safe, age-bounded)."""
     if not OUT.exists():
         return []
@@ -524,6 +691,9 @@ def load_pw_jobs(max_age_hours: int = 24) -> list[Job]:
         log.warning("Could not read %s: %s", OUT, e)
         return []
     jobs = [Job(**item) for item in raw]
+    if sources:
+        wanted = {s.lower() for s in sources}
+        jobs = [j for j in jobs if j.source.lower() in wanted]
     log.info("Loaded %d cached Playwright jobs from %s", len(jobs), OUT)
     return jobs
 

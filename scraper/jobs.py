@@ -55,8 +55,10 @@ def _get(
     url: str,
     params: dict | None = None,
     timeout: int = 20,
-    delay: tuple[float, float] = (3, 7),
+    delay: tuple[float, float] = (0.5, 1.5),
 ) -> Optional[requests.Response]:
+    """HTTP GET with retry. Small inter-request delay only — the caller
+    (search_all) is responsible for cross-source politeness delays."""
     headers = random.choice(HEADERS_LIST)
     for attempt in range(3):
         try:
@@ -72,7 +74,7 @@ def _get(
         except requests.RequestException as e:
             log.warning("Request failed %s: %s", url, e)
             if attempt < 2:
-                time.sleep(5)
+                time.sleep(3)
     return None
 
 
@@ -186,36 +188,6 @@ def search_gulf_talent(query: str, location: str = "United Arab Emirates", limit
     return jobs
 
 
-def search_bayt(query: str, location: str = "United Arab Emirates", limit: int = 25) -> list[Job]:
-    """Scrape Bayt.com public search."""
-    jobs: list[Job] = []
-    resp = _get(
-        "https://www.bayt.com/en/uae/jobs/",
-        params={"q": query, "where": location},
-    )
-    if not resp:
-        return jobs
-    soup = BeautifulSoup(resp.text, "html.parser")
-    for card in soup.select("li.w-100, div.job-card, div[data-job-id]")[:limit]:
-        title_el = card.select_one("h2 a, h3 a, a[href*='/jobs/']")
-        company_el = card.select_one("span.clickable, div.companyName, h5")
-        loc_el = card.select_one("span.t-small, div.location")
-        if not title_el:
-            continue
-        href = title_el.get("href") or ""
-        if href.startswith("/"):
-            href = f"https://www.bayt.com{href}"
-        jobs.append(Job(
-            source="bayt",
-            title=title_el.get_text(strip=True),
-            company=company_el.get_text(strip=True) if company_el else "Unknown",
-            location=loc_el.get_text(strip=True) if loc_el else location,
-            url=href,
-        ))
-    log.info("Bayt: %d jobs for '%s'", len(jobs), query)
-    return jobs
-
-
 def _company_from_url(url: str, fallback: str = "Unknown") -> str:
     """Extract company name from LinkedIn job URL slug: .../jobs/view/{title}-at-{company}-{id}"""
     m = re.search(r"-at-([a-z0-9-]+)-\d+", url)
@@ -288,8 +260,8 @@ def search_all(
                 continue
             fn = SOURCES.get(src)
             if fn is None:
-                # Playwright-only source (indeed/naukri) — handled elsewhere
-                if src in ("indeed", "naukri"):
+                # Playwright-only source (indeed/naukri/naukrigulf/bayt) — handled elsewhere
+                if src in ("indeed", "naukri", "naukrigulf", "bayt"):
                     continue
                 log.warning("Unknown source '%s' (known: %s)", src, ", ".join(SOURCES))
                 continue
@@ -312,19 +284,21 @@ def search_all(
                         "(bot-blocked? try --playwright)",
                         src, empty_streak[src],
                     )
-            time.sleep(random.uniform(3, 6))
+            # Small delay between query×source pairs (politeness, not multi-second sleeps)
+            time.sleep(random.uniform(1, 2))
     log.info("Total unique jobs: %d (sources: %s)", len(seen), ", ".join(wanted))
     return list(seen.values())
 
 
-# Indeed & Naukri need Playwright (plain requests get 403/Akamai-blocked).
+# Indeed, Naukri & Bayt need Playwright (plain requests get 403/Cloudflare-blocked).
 # They're handled by scraper/pw_jobs.py when --playwright is used.
 SOURCES = {
     "linkedin": lambda q, loc, limit: search_linkedin_public(q, loc, limit=limit, pages=2),
     "indeed": None,  # Playwright only (403 on plain requests)
     "naukri": None,  # Playwright only (Akamai blocks plain requests)
+    "naukrigulf": None,  # Playwright only
     "gulftalent": search_gulf_talent,
-    "bayt": search_bayt,
+    "bayt": None,  # Playwright only (Cloudflare 403 on plain requests)
 }
 
 DESC_SELECTORS = [
@@ -497,8 +471,9 @@ def enrich_descriptions(
         if job.description or job.job_id in skip_ids or not job.url:
             continue
 
-        # Indeed/Naukri: plain requests always fail — route to Playwright
-        if "indeed.com" in job.url or "naukri.com" in job.url:
+        # Indeed/Naukri/NaukriGulf/Bayt: plain requests always fail — route to Playwright
+        if "indeed.com" in job.url or "naukri.com" in job.url or "naukrigulf.com" in job.url \
+                or "bayt.com" in job.url:
             playwright_only.append(job)
             continue
 
@@ -516,14 +491,16 @@ def enrich_descriptions(
         pw_targets += failed[:max(0, max_fetches - len(pw_targets))]
 
     if pw_targets:
-        log.info("PW description fetch for %d pages (%d Indeed/Naukri + %d blocked)",
+        log.info("PW description fetch for %d pages (%d platform-blocked + %d plain-failed)",
                  len(pw_targets), len(playwright_only[:max_fetches]), len(failed))
         try:
             # Split by source for specialized fetchers
             indeed_urls = [j.url for j in pw_targets if "indeed.com" in j.url]
             naukri_urls = [j.url for j in pw_targets if "naukri.com" in j.url]
+            naukrigulf_urls = [j.url for j in pw_targets if "naukrigulf.com" in j.url]
             other_urls = [j.url for j in pw_targets
-                          if "indeed.com" not in j.url and "naukri.com" not in j.url]
+                          if "indeed.com" not in j.url and "naukri.com" not in j.url
+                          and "naukrigulf.com" not in j.url]
 
             got: dict[str, str] = {}
             if indeed_urls:
@@ -532,6 +509,9 @@ def enrich_descriptions(
             if naukri_urls:
                 from scraper.pw_jobs import fetch_naukri_descriptions_pw
                 got.update(fetch_naukri_descriptions_pw(naukri_urls))
+            if naukrigulf_urls:
+                from scraper.pw_jobs import fetch_naukrigulf_descriptions_pw
+                got.update(fetch_naukrigulf_descriptions_pw(naukrigulf_urls))
             if other_urls:
                 from scraper.pw_jobs import fetch_descriptions_pw
                 got.update(fetch_descriptions_pw(other_urls))

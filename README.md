@@ -35,7 +35,7 @@ details never leave this machine.
 
 | Keys | Enables |
 |---|---|
-| `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OLLAMA_*` | AI scoring & writing. Fallback chain: Claude → OpenAI → local Ollama. |
+| `GEMINI_API_KEY` / `ANTHROPIC_API_KEY` / `OPENAI_API_KEY` / `OLLAMA_*` | AI scoring & writing. Fallback chain: Gemini → Claude → OpenAI → local Ollama. |
 | `QUERIES`, `JOB_LOCATION`, `SOURCES`, `MIN_SCORE`, `PREP_LIMIT` | Search/threshold tuning |
 | `TELEGRAM_BOT_TOKEN` + `TELEGRAM_CHAT_ID` | Digest → Telegram |
 | `SMTP_HOST` (+ `SMTP_PORT`, `SMTP_USER`, `SMTP_PASSWORD`, `EMAIL_TO`) | Digest → email |
@@ -59,6 +59,9 @@ python3 main.py applied <job_id>   # mark one as applied
 python3 main.py serve        # review UI at http://127.0.0.1:8787
 python3 main.py linkedin-login   # one-time: save LinkedIn session for Easy Apply
 python3 main.py indeed-login     # one-time: save Indeed session for Easy Apply
+python3 main.py naukri-login     # one-time: save Naukri (India) session
+python3 main.py naukrigulf-login # one-time: save NaukriGulf session
+python3 main.py bayt-login       # one-time: save Bayt session for Easy Apply
 ```
 
 Useful flags (`python3 main.py <cmd> --help` for all):
@@ -182,19 +185,25 @@ Set `COPILOT_FLAGS=--playwright` in the environment (or edit the plist with
 ## Layout
 
 ```
-main.py             CLI orchestrator (argparse subcommands)
-config/settings.py  .env loading + search/threshold config
-config/profile.py   candidate profile the LLM scores against
-scraper/jobs.py     requests+BS4 scrapers (4 sources) + description fetcher
-scraper/pw_jobs.py  Playwright scrapers; cached to data/pw_jobs.json (auto-merged)
-ai/assistant.py     LLM scoring / cover letters / resume bullets (3-provider chain)
-tracker/db.py       SQLite jobs + applications
-notify/digest.py    markdown digest builder
-notify/channels.py  digest delivery: Telegram / email / Slack
-apps/review.py      local Flask review UI
-scripts/daily.sh    launchd daily runner
-data/               applications.db, digests/, pw_jobs.json
-logs/               copilot.log, daily-*.log, launchd.*
+main.py               CLI orchestrator (argparse subcommands)
+config/settings.py    .env loading + search/threshold config
+config/profile.py     candidate profile the LLM scores against
+scraper/jobs.py       requests+BS4 scrapers + description fetcher
+scraper/pw_jobs.py    Playwright scrapers (Indeed, Naukri, NaukriGulf, Bayt, GulfTalent)
+ai/assistant.py       LLM scoring / cover letters / resume bullets (multi-provider chain)
+apply/linkedin.py     LinkedIn session + Easy Apply
+apply/indeed.py       Indeed session + Easy Apply
+apply/naukri.py       Naukri.com (India) session + Easy Apply
+apply/naukrigulf.py   NaukriGulf session + Easy Apply
+apply/bayt.py         Bayt session + Easy Apply
+apply/autofill.py     generic ATS autofill (Greenhouse, Lever, Workable, ...)
+tracker/db.py         SQLite jobs + applications
+notify/digest.py      markdown digest builder
+notify/channels.py    digest delivery: Telegram / email / Slack
+apps/review.py        local Flask review UI
+scripts/daily.sh      launchd daily runner
+data/                 applications.db, digests/, *_state.json (sessions)
+logs/                 copilot.log, daily-*.log, screenshots
 ```
 
 ## Notes

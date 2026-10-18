@@ -8,6 +8,8 @@ Env overrides:
     LINKEDIN_DAILY_CAP   (default 15)
     NAUKRI_DAILY_CAP     (default 15)
     INDEED_DAILY_CAP     (default 10)
+    NAUKRIGULF_DAILY_CAP (default 10)
+    BAYT_DAILY_CAP       (default 10)
     APPLY_DELAY_MIN      (default 30 seconds)
     APPLY_DELAY_MAX      (default 90 seconds)
     RATE_LIMIT_ENABLED   (default 1) — set 0 to disable entirely
@@ -22,8 +24,20 @@ from datetime import datetime, timezone
 
 log = logging.getLogger("ratelimit")
 
-DEFAULT_CAPS = {"linkedin": 15, "naukri": 15, "indeed": 10}
-ENV_CAP_KEYS = {"linkedin": "LINKEDIN_DAILY_CAP", "naukri": "NAUKRI_DAILY_CAP", "indeed": "INDEED_DAILY_CAP"}
+DEFAULT_CAPS = {
+    "linkedin": 15,
+    "naukri": 15,
+    "indeed": 10,
+    "naukrigulf": 10,
+    "bayt": 10,
+}
+ENV_CAP_KEYS = {
+    "linkedin": "LINKEDIN_DAILY_CAP",
+    "naukri": "NAUKRI_DAILY_CAP",
+    "indeed": "INDEED_DAILY_CAP",
+    "naukrigulf": "NAUKRIGULF_DAILY_CAP",
+    "bayt": "BAYT_DAILY_CAP",
+}
 
 
 def rate_limit_enabled() -> bool:

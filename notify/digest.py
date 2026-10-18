@@ -125,7 +125,10 @@ def build_digest(
     if not top_jobs:
         lines.append("_No high-match jobs today. Try broadening search queries._")
     for j in top_jobs:
-        reasons = json.loads(j.get("match_reasons") or "[]")
+        try:
+            reasons = json.loads(j.get("match_reasons") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            reasons = []
         reason_str = "; ".join(reasons[:2])
         lines.append(f"### {j['score']} — {j['title']}")
         lines.append(f"- **Company:** {j['company']} | {j['location']} | via {j['source']}")

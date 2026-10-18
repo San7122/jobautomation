@@ -106,7 +106,10 @@ def build_packet(
     else:
         import json
 
-        reasons = json.loads(job.get("match_reasons") or "[]")
+        try:
+            reasons = json.loads(job.get("match_reasons") or "[]")
+        except (json.JSONDecodeError, TypeError):
+            reasons = []
         desc = job.get("description") or ""
         letter = tailor_cover_letter(job["title"], job["company"], desc, reasons)
         bullets = tailor_resume_bullets(job["title"], desc)

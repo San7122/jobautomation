@@ -148,6 +148,8 @@ def run_fill(
         }
         is_linkedin = "linkedin.com" in job_url
         is_indeed = "indeed.com" in job_url
+        is_naukrigulf = "naukrigulf.com" in job_url
+        is_bayt = "bayt.com" in job_url
         if is_linkedin:
             try:
                 from apply.linkedin import STATE_FILE, has_session
@@ -172,6 +174,22 @@ def run_fill(
                     ctx_kwargs["storage_state"] = str(NAUKRI_STATE)
             except Exception as e:
                 log.warning("Naukri session unavailable: %s", e)
+        elif is_naukrigulf:
+            try:
+                from apply.naukrigulf import STATE_FILE as NAUKRIGULF_STATE, has_session as naukrigulf_has_session
+
+                if naukrigulf_has_session():
+                    ctx_kwargs["storage_state"] = str(NAUKRIGULF_STATE)
+            except Exception as e:
+                log.warning("NaukriGulf session unavailable: %s", e)
+        elif is_bayt:
+            try:
+                from apply.bayt import STATE_FILE as BAYT_STATE, has_session as bayt_has_session
+
+                if bayt_has_session():
+                    ctx_kwargs["storage_state"] = str(BAYT_STATE)
+            except Exception as e:
+                log.warning("Bayt session unavailable: %s", e)
         ctx = browser.new_context(**ctx_kwargs)
         ctx.add_init_script("Object.defineProperty(navigator, 'webdriver', {get: () => undefined});")
         page = ctx.new_page()
